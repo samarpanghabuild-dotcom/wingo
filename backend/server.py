@@ -1,72 +1,457 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from pydantic import BaseModel, Field, ConfigDict, EmailStr
+from typing import List, Optional
 import uuid
-from datetime import datetime, timezone
-
+from datetime import datetime, timezone, timedelta
+import bcrypt
+import jwt
+import random
+import asyncio
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
 app = FastAPI()
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+security = HTTPBearer()
 
+JWT_SECRET = os.environ.get('JWT_SECRET', 'your-secret-key-change-in-production')
+JWT_ALGORITHM = 'HS256'
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
+# Models
+class UserRegister(BaseModel):
+    email: EmailStr
+    password: str
+    name: str
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class User(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    email: str
+    name: str
+    balance: float = 0.0
+    total_credited: float = 0.0
+    total_wagered: float = 0.0
+    wager_requirement: float = 0.0
+    role: str = "user"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+class DepositRequest(BaseModel):
+    utr: str
+    amount: float
 
-# Add your routes to the router instead of directly to app
+class Deposit(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    user_email: str
+    utr: str
+    amount: float
+    status: str = "pending"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class WithdrawalRequest(BaseModel):
+    amount: float
+
+class Withdrawal(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    user_email: str
+    amount: float
+    status: str = "pending"
+    wager_progress: float
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class BetRequest(BaseModel):
+    game_mode: str
+    bet_type: str
+    bet_value: str
+    bet_amount: float
+
+class GameHistory(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    game_mode: str
+    bet_type: str
+    bet_value: str
+    bet_amount: float
+    result_number: int
+    result_color: str
+    win_amount: float
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class GameRound(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    game_mode: str
+    round_number: int
+    result_number: int
+    result_color: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# Helper functions
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(password: str, hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+
+def create_token(user_id: str, email: str, role: str) -> str:
+    payload = {
+        'user_id': user_id,
+        'email': email,
+        'role': role,
+        'exp': datetime.now(timezone.utc) + timedelta(days=7)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        token = credentials.credentials
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user = await db.users.find_one({'id': payload['user_id']}, {'_id': 0, 'password': 0})
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        return user
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+async def get_admin_user(user: dict = Depends(get_current_user)):
+    if user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+def calculate_game_result():
+    rand = random.random()
+    if rand < 0.2:
+        numbers = [0, 5]
+    else:
+        numbers = [1, 2, 3, 4, 6, 7, 8, 9]
+    
+    result_number = random.choice(numbers)
+    
+    if result_number in [1, 3, 7, 9]:
+        result_color = 'green'
+    elif result_number in [2, 4, 6, 8]:
+        result_color = 'red'
+    elif result_number == 0:
+        result_color = 'red-violet'
+    else:
+        result_color = 'green-violet'
+    
+    return result_number, result_color
+
+def calculate_win(bet_type: str, bet_value: str, bet_amount: float, result_number: int, result_color: str) -> float:
+    if bet_type == 'number':
+        if int(bet_value) == result_number:
+            return bet_amount * 9
+    elif bet_type == 'color':
+        if bet_value == 'green' and 'green' in result_color:
+            return bet_amount * 2
+        elif bet_value == 'red' and 'red' in result_color:
+            return bet_amount * 2
+        elif bet_value == 'violet' and 'violet' in result_color:
+            return bet_amount * 4.5
+    return 0
+
+# Auth routes
+@api_router.post("/auth/register")
+async def register(user_data: UserRegister):
+    existing = await db.users.find_one({'email': user_data.email}, {'_id': 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    user = User(
+        email=user_data.email,
+        name=user_data.name
+    )
+    user_dict = user.model_dump()
+    user_dict['password'] = hash_password(user_data.password)
+    user_dict['created_at'] = user_dict['created_at'].isoformat()
+    
+    await db.users.insert_one(user_dict)
+    
+    token = create_token(user.id, user.email, user.role)
+    return {'token': token, 'user': user.model_dump()}
+
+@api_router.post("/auth/login")
+async def login(credentials: UserLogin):
+    user = await db.users.find_one({'email': credentials.email}, {'_id': 0})
+    if not user or not verify_password(credentials.password, user['password']):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    token = create_token(user['id'], user['email'], user['role'])
+    user.pop('password')
+    return {'token': token, 'user': user}
+
+# User routes
+@api_router.get("/user/profile")
+async def get_profile(user: dict = Depends(get_current_user)):
+    return user
+
+@api_router.get("/user/balance")
+async def get_balance(user: dict = Depends(get_current_user)):
+    return {
+        'balance': user.get('balance', 0),
+        'wager_requirement': user.get('wager_requirement', 0),
+        'total_wagered': user.get('total_wagered', 0)
+    }
+
+# Deposit routes
+@api_router.post("/deposit/request")
+async def request_deposit(deposit_data: DepositRequest, user: dict = Depends(get_current_user)):
+    if len(deposit_data.utr) != 12:
+        raise HTTPException(status_code=400, detail="UTR must be 12 digits")
+    
+    deposit = Deposit(
+        user_id=user['id'],
+        user_email=user['email'],
+        utr=deposit_data.utr,
+        amount=deposit_data.amount
+    )
+    deposit_dict = deposit.model_dump()
+    deposit_dict['created_at'] = deposit_dict['created_at'].isoformat()
+    
+    await db.deposits.insert_one(deposit_dict)
+    return {'message': 'Deposit request submitted', 'deposit': deposit.model_dump()}
+
+@api_router.get("/deposit/history")
+async def get_deposit_history(user: dict = Depends(get_current_user)):
+    deposits = await db.deposits.find({'user_id': user['id']}, {'_id': 0}).sort('created_at', -1).to_list(100)
+    for dep in deposits:
+        if isinstance(dep['created_at'], str):
+            dep['created_at'] = datetime.fromisoformat(dep['created_at'])
+    return deposits
+
+# Withdrawal routes
+@api_router.post("/withdrawal/request")
+async def request_withdrawal(withdrawal_data: WithdrawalRequest, user: dict = Depends(get_current_user)):
+    if withdrawal_data.amount > user.get('balance', 0):
+        raise HTTPException(status_code=400, detail="Insufficient balance")
+    
+    wager_req = user.get('wager_requirement', 0)
+    total_wagered = user.get('total_wagered', 0)
+    
+    if total_wagered < wager_req:
+        raise HTTPException(status_code=400, detail=f"Must wager {wager_req - total_wagered:.2f} more before withdrawal")
+    
+    wager_progress = (total_wagered / wager_req * 100) if wager_req > 0 else 100
+    
+    withdrawal = Withdrawal(
+        user_id=user['id'],
+        user_email=user['email'],
+        amount=withdrawal_data.amount,
+        wager_progress=wager_progress
+    )
+    withdrawal_dict = withdrawal.model_dump()
+    withdrawal_dict['created_at'] = withdrawal_dict['created_at'].isoformat()
+    
+    await db.withdrawals.insert_one(withdrawal_dict)
+    return {'message': 'Withdrawal request submitted', 'withdrawal': withdrawal.model_dump()}
+
+@api_router.get("/withdrawal/history")
+async def get_withdrawal_history(user: dict = Depends(get_current_user)):
+    withdrawals = await db.withdrawals.find({'user_id': user['id']}, {'_id': 0}).sort('created_at', -1).to_list(100)
+    for wd in withdrawals:
+        if isinstance(wd['created_at'], str):
+            wd['created_at'] = datetime.fromisoformat(wd['created_at'])
+    return withdrawals
+
+# Game routes
+@api_router.post("/game/bet")
+async def place_bet(bet_data: BetRequest, user: dict = Depends(get_current_user)):
+    if bet_data.bet_amount > user.get('balance', 0):
+        raise HTTPException(status_code=400, detail="Insufficient balance")
+    
+    result_number, result_color = calculate_game_result()
+    win_amount = calculate_win(bet_data.bet_type, bet_data.bet_value, bet_data.bet_amount, result_number, result_color)
+    
+    game_history = GameHistory(
+        user_id=user['id'],
+        game_mode=bet_data.game_mode,
+        bet_type=bet_data.bet_type,
+        bet_value=bet_data.bet_value,
+        bet_amount=bet_data.bet_amount,
+        result_number=result_number,
+        result_color=result_color,
+        win_amount=win_amount
+    )
+    game_dict = game_history.model_dump()
+    game_dict['created_at'] = game_dict['created_at'].isoformat()
+    
+    await db.game_history.insert_one(game_dict)
+    
+    new_balance = user.get('balance', 0) - bet_data.bet_amount + win_amount
+    new_wagered = user.get('total_wagered', 0) + bet_data.bet_amount
+    
+    await db.users.update_one(
+        {'id': user['id']},
+        {'$set': {'balance': new_balance, 'total_wagered': new_wagered}}
+    )
+    
+    return {
+        'result_number': result_number,
+        'result_color': result_color,
+        'win_amount': win_amount,
+        'new_balance': new_balance
+    }
+
+@api_router.get("/game/history")
+async def get_game_history(user: dict = Depends(get_current_user)):
+    history = await db.game_history.find({'user_id': user['id']}, {'_id': 0}).sort('created_at', -1).to_list(100)
+    for game in history:
+        if isinstance(game['created_at'], str):
+            game['created_at'] = datetime.fromisoformat(game['created_at'])
+    return history
+
+@api_router.get("/game/recent-results")
+async def get_recent_results(game_mode: str):
+    results = await db.game_rounds.find({'game_mode': game_mode}, {'_id': 0}).sort('created_at', -1).limit(10).to_list(10)
+    for result in results:
+        if isinstance(result['created_at'], str):
+            result['created_at'] = datetime.fromisoformat(result['created_at'])
+    return results
+
+# Admin routes
+@api_router.get("/admin/deposits")
+async def get_all_deposits(admin: dict = Depends(get_admin_user)):
+    deposits = await db.deposits.find({}, {'_id': 0}).sort('created_at', -1).to_list(1000)
+    for dep in deposits:
+        if isinstance(dep['created_at'], str):
+            dep['created_at'] = datetime.fromisoformat(dep['created_at'])
+    return deposits
+
+@api_router.put("/admin/deposit/{deposit_id}/approve")
+async def approve_deposit(deposit_id: str, admin: dict = Depends(get_admin_user)):
+    deposit = await db.deposits.find_one({'id': deposit_id}, {'_id': 0})
+    if not deposit:
+        raise HTTPException(status_code=404, detail="Deposit not found")
+    
+    if deposit['status'] != 'pending':
+        raise HTTPException(status_code=400, detail="Deposit already processed")
+    
+    user = await db.users.find_one({'id': deposit['user_id']}, {'_id': 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    new_balance = user.get('balance', 0) + deposit['amount']
+    new_credited = user.get('total_credited', 0) + deposit['amount']
+    new_wager_req = user.get('wager_requirement', 0) + (deposit['amount'] * 2)
+    
+    await db.users.update_one(
+        {'id': deposit['user_id']},
+        {'$set': {
+            'balance': new_balance,
+            'total_credited': new_credited,
+            'wager_requirement': new_wager_req
+        }}
+    )
+    
+    await db.deposits.update_one(
+        {'id': deposit_id},
+        {'$set': {'status': 'approved'}}
+    )
+    
+    return {'message': 'Deposit approved', 'new_balance': new_balance}
+
+@api_router.put("/admin/deposit/{deposit_id}/reject")
+async def reject_deposit(deposit_id: str, admin: dict = Depends(get_admin_user)):
+    deposit = await db.deposits.find_one({'id': deposit_id}, {'_id': 0})
+    if not deposit:
+        raise HTTPException(status_code=404, detail="Deposit not found")
+    
+    if deposit['status'] != 'pending':
+        raise HTTPException(status_code=400, detail="Deposit already processed")
+    
+    await db.deposits.update_one(
+        {'id': deposit_id},
+        {'$set': {'status': 'rejected'}}
+    )
+    
+    return {'message': 'Deposit rejected'}
+
+@api_router.get("/admin/withdrawals")
+async def get_all_withdrawals(admin: dict = Depends(get_admin_user)):
+    withdrawals = await db.withdrawals.find({}, {'_id': 0}).sort('created_at', -1).to_list(1000)
+    for wd in withdrawals:
+        if isinstance(wd['created_at'], str):
+            wd['created_at'] = datetime.fromisoformat(wd['created_at'])
+    return withdrawals
+
+@api_router.put("/admin/withdrawal/{withdrawal_id}/approve")
+async def approve_withdrawal(withdrawal_id: str, admin: dict = Depends(get_admin_user)):
+    withdrawal = await db.withdrawals.find_one({'id': withdrawal_id}, {'_id': 0})
+    if not withdrawal:
+        raise HTTPException(status_code=404, detail="Withdrawal not found")
+    
+    if withdrawal['status'] != 'pending':
+        raise HTTPException(status_code=400, detail="Withdrawal already processed")
+    
+    user = await db.users.find_one({'id': withdrawal['user_id']}, {'_id': 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    new_balance = user.get('balance', 0) - withdrawal['amount']
+    
+    await db.users.update_one(
+        {'id': withdrawal['user_id']},
+        {'$set': {'balance': new_balance}}
+    )
+    
+    await db.withdrawals.update_one(
+        {'id': withdrawal_id},
+        {'$set': {'status': 'approved'}}
+    )
+    
+    return {'message': 'Withdrawal approved', 'new_balance': new_balance}
+
+@api_router.put("/admin/withdrawal/{withdrawal_id}/reject")
+async def reject_withdrawal(withdrawal_id: str, admin: dict = Depends(get_admin_user)):
+    withdrawal = await db.withdrawals.find_one({'id': withdrawal_id}, {'_id': 0})
+    if not withdrawal:
+        raise HTTPException(status_code=404, detail="Withdrawal not found")
+    
+    if withdrawal['status'] != 'pending':
+        raise HTTPException(status_code=400, detail="Withdrawal already processed")
+    
+    await db.withdrawals.update_one(
+        {'id': withdrawal_id},
+        {'$set': {'status': 'rejected'}}
+    )
+    
+    return {'message': 'Withdrawal rejected'}
+
+@api_router.get("/admin/users")
+async def get_all_users(admin: dict = Depends(get_admin_user)):
+    users = await db.users.find({}, {'_id': 0, 'password': 0}).sort('created_at', -1).to_list(1000)
+    for user in users:
+        if isinstance(user.get('created_at'), str):
+            user['created_at'] = datetime.fromisoformat(user['created_at'])
+    return users
+
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "WingoX API"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
-
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
-
-# Include the router in the main app
 app.include_router(api_router)
 
 app.add_middleware(
@@ -77,7 +462,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
