@@ -6,6 +6,7 @@ import Landing from '@/pages/Landing';
 import Auth from '@/pages/Auth';
 import Game from '@/pages/Game';
 import Wallet from '@/pages/Wallet';
+import Withdrawal from '@/pages/Withdrawal';
 import History from '@/pages/History';
 import Admin from '@/pages/Admin';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
