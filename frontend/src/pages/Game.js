@@ -446,6 +446,13 @@ const Game = () => {
         {/* Game History Section */}
         <div className="glass-panel p-4">
           <div className="flex items-center justify-between mb-4">
+            <button
+              data-testid="how-to-play-btn"
+              className="text-sm px-4 py-2 rounded font-bold"
+              style={{ background: '#FFD600', color: '#000' }}
+            >
+              How to play
+            </button>
             <h3 className="text-lg font-bold" style={{ fontFamily: 'Unbounded' }}>
               Game History
             </h3>
@@ -455,7 +462,7 @@ const Game = () => {
               className="text-sm px-3 py-1 rounded"
               style={{ background: '#00FF94', color: '#000' }}
             >
-              {showHistory ? 'Hide' : 'Show'} History
+              {showHistory ? 'Hide' : 'Show'}
             </button>
           </div>
 
