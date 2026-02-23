@@ -198,7 +198,7 @@ const Game = () => {
             </button>
             <button
               data-testid="withdraw-btn"
-              onClick={() => navigate('/wallet')}
+              onClick={() => navigate('/withdrawal')}
               className="px-4 py-2 rounded-lg font-bold text-sm"
               style={{ background: '#FF0055', color: '#FFF' }}
             >
