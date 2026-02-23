@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { ArrowLeft, Wallet } from 'lucide-react';
+import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Clock } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -14,12 +14,16 @@ const Game = () => {
   const { user, refreshBalance } = useAuth();
   
   const [countdown, setCountdown] = useState(null);
+  const [currentPeriod, setCurrentPeriod] = useState('');
   const [betAmount, setBetAmount] = useState(10);
   const [selectedBet, setSelectedBet] = useState(null);
   const [betType, setBetType] = useState('color');
+  const [multiplier, setMultiplier] = useState(1);
   const [recentResults, setRecentResults] = useState([]);
+  const [gameHistory, setGameHistory] = useState([]);
   const [betting, setBetting] = useState(false);
   const [gameResult, setGameResult] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const gameDuration = {
     '30s': 30,
@@ -33,10 +37,33 @@ const Game = () => {
       const now = Date.now();
       const timeInCycle = Math.floor(now / 1000) % gameDuration;
       setCountdown(gameDuration - timeInCycle);
+      
+      // Generate period number based on timestamp
+      const periodBase = Math.floor(now / 1000 / gameDuration);
+      const year = new Date().getFullYear();
+      const month = String(new Date().getMonth() + 1).padStart(2, '0');
+      const day = String(new Date().getDate()).padStart(2, '0');
+      setCurrentPeriod(`${year}${month}${day}${String(periodBase).padStart(7, '0')}`);
     }, 100);
 
+    fetchGameHistory();
     return () => clearInterval(interval);
   }, [gameDuration]);
+
+  const fetchGameHistory = async () => {
+    try {
+      const response = await axios.get(`${API}/game/history`);
+      setGameHistory(response.data.slice(0, 50));
+      // Create recent results from history
+      const recent = response.data.slice(0, 10).map(g => ({
+        number: g.result_number,
+        color: g.result_color
+      }));
+      setRecentResults(recent);
+    } catch (error) {
+      console.error('Failed to fetch game history:', error);
+    }
+  };
 
   const placeBet = async () => {
     if (!selectedBet) {
@@ -44,12 +71,14 @@ const Game = () => {
       return;
     }
 
-    if (betAmount > user.balance) {
+    const finalAmount = betAmount * multiplier;
+    
+    if (finalAmount > user.balance) {
       toast.error('Insufficient balance');
       return;
     }
 
-    if (betAmount < 10) {
+    if (finalAmount < 10) {
       toast.error('Minimum bet is ₹10');
       return;
     }
@@ -60,11 +89,12 @@ const Game = () => {
         game_mode: mode,
         bet_type: betType,
         bet_value: selectedBet,
-        bet_amount: betAmount
+        bet_amount: finalAmount
       });
 
       setGameResult(response.data);
       await refreshBalance();
+      await fetchGameHistory();
 
       if (response.data.win_amount > 0) {
         toast.success(`You won ₹${response.data.win_amount.toFixed(2)}!`);
@@ -85,6 +115,36 @@ const Game = () => {
     if (num === 5) return 'green-violet';
     if ([1, 3, 7, 9].includes(num)) return 'green';
     return 'red';
+  };
+
+  const getBigSmall = (num) => {
+    return num >= 5 ? 'Big' : 'Small';
+  };
+
+  const getColorDot = (color) => {
+    if (color.includes('green') && color.includes('violet')) {
+      return (
+        <div className="flex gap-1">
+          <div className="w-3 h-3 rounded-full" style={{ background: '#00FF94' }} />
+          <div className="w-3 h-3 rounded-full" style={{ background: '#9333EA' }} />
+        </div>
+      );
+    }
+    if (color.includes('red') && color.includes('violet')) {
+      return (
+        <div className="flex gap-1">
+          <div className="w-3 h-3 rounded-full" style={{ background: '#FF0055' }} />
+          <div className="w-3 h-3 rounded-full" style={{ background: '#9333EA' }} />
+        </div>
+      );
+    }
+    if (color.includes('green')) {
+      return <div className="w-3 h-3 rounded-full" style={{ background: '#00FF94' }} />;
+    }
+    if (color.includes('violet')) {
+      return <div className="w-3 h-3 rounded-full" style={{ background: '#9333EA' }} />;
+    }
+    return <div className="w-3 h-3 rounded-full" style={{ background: '#FF0055' }} />;
   };
 
   return (
