@@ -290,18 +290,29 @@ async def request_withdrawal(withdrawal_data: WithdrawalRequest, user: dict = De
     if withdrawal_data.amount > user.get('balance', 0):
         raise HTTPException(status_code=400, detail="Insufficient balance")
     
+    if withdrawal_data.amount < 100:
+        raise HTTPException(status_code=400, detail="Minimum withdrawal is ₹100")
+    
     wager_req = user.get('wager_requirement', 0)
     total_wagered = user.get('total_wagered', 0)
     
     if total_wagered < wager_req:
-        raise HTTPException(status_code=400, detail=f"Must wager {wager_req - total_wagered:.2f} more before withdrawal")
+        raise HTTPException(status_code=400, detail=f"Must wager ₹{wager_req - total_wagered:.2f} more before withdrawal")
     
     wager_progress = (total_wagered / wager_req * 100) if wager_req > 0 else 100
     
     withdrawal = Withdrawal(
         user_id=user['id'],
         user_email=user['email'],
+        user_name=user['name'],
         amount=withdrawal_data.amount,
+        method=withdrawal_data.method,
+        bank_name=withdrawal_data.bank_name,
+        account_holder=withdrawal_data.account_holder,
+        account_number=withdrawal_data.account_number,
+        ifsc_code=withdrawal_data.ifsc_code,
+        upi_id=withdrawal_data.upi_id,
+        mobile_number=withdrawal_data.mobile_number,
         wager_progress=wager_progress
     )
     withdrawal_dict = withdrawal.model_dump()
