@@ -230,11 +230,34 @@ const Game = () => {
           </div>
         </div>
 
+        {/* Previous Results Preview Strip */}
+        {recentResults.length > 0 && (
+          <div className="glass-panel p-3 mb-4">
+            <div className="text-xs mb-2" style={{ color: '#A1A1AA' }}>Recent Results</div>
+            <div className="flex gap-2 overflow-x-auto">
+              {recentResults.map((result, idx) => (
+                <div
+                  key={idx}
+                  className="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl mono"
+                  style={{
+                    background: result.color.includes('green') ? '#00FF94' : 
+                               result.color.includes('violet') ? '#9333EA' : '#FF0055',
+                    color: result.color.includes('violet') ? '#FFF' : '#000',
+                    border: '2px solid rgba(255,255,255,0.2)'
+                  }}
+                >
+                  {result.number}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Game Result Modal */}
         {gameResult && (
           <div 
             data-testid="game-result-modal"
-            className="glass-panel p-6 mb-6 text-center border-2"
+            className="glass-panel p-6 mb-4 text-center border-2"
             style={{ borderColor: gameResult.win_amount > 0 ? '#00FF94' : '#FF0055' }}
           >
             <div className="text-2xl font-bold mb-4" style={{ fontFamily: 'Unbounded' }}>
@@ -244,25 +267,22 @@ const Game = () => {
                 <span className="neon-pink">TRY AGAIN!</span>
               )}
             </div>
-            <div className="flex items-center justify-center gap-4 mb-4">
+            <div className="flex items-center justify-center gap-6 mb-4">
               <div>
-                <div className="text-sm" style={{ color: '#A1A1AA' }}>Result Number</div>
+                <div className="text-xs" style={{ color: '#A1A1AA' }}>Result</div>
                 <div 
-                  className="text-4xl font-bold mono"
+                  className="text-5xl font-bold mono"
                   style={{ color: gameResult.win_amount > 0 ? '#00FF94' : '#FF0055' }}
                 >
                   {gameResult.result_number}
                 </div>
-              </div>
-              <div>
-                <div className="text-sm" style={{ color: '#A1A1AA' }}>Result Color</div>
-                <div className="text-xl font-bold capitalize">
+                <div className="text-sm mt-1 capitalize">
                   {gameResult.result_color.replace('-', ' + ')}
                 </div>
               </div>
             </div>
             {gameResult.win_amount > 0 && (
-              <div className="text-xl mono neon-green">
+              <div className="text-2xl mono neon-green">
                 Won: ₹{gameResult.win_amount.toFixed(2)}
               </div>
             )}
