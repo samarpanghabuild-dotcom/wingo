@@ -255,6 +255,13 @@ async def get_balance(user: dict = Depends(get_current_user)):
         'total_wagered': user.get('total_wagered', 0)
     }
 
+@api_router.get("/payment-settings")
+async def get_payment_settings_public():
+    settings = await db.payment_settings.find_one({'id': 'payment_settings'}, {'_id': 0})
+    if not settings:
+        return {'qr_code_url': '', 'upi_id': ''}
+    return {'qr_code_url': settings.get('qr_code_url', ''), 'upi_id': settings.get('upi_id', '')}
+
 # Deposit routes
 @api_router.post("/deposit/request")
 async def request_deposit(deposit_data: DepositRequest, user: dict = Depends(get_current_user)):
