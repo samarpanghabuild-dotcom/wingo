@@ -446,3 +446,355 @@ const Admin = () => {
             )}
           </div>
         )}
+
+        {/* Withdrawals Table */}
+        {activeTab === 'withdrawals' && (
+          <div className="glass-panel p-6">
+            <h3 className="text-xl font-bold mb-6" style={{ fontFamily: 'Unbounded' }}>
+              Withdrawal Requests ({pendingWithdrawals.length} pending)
+            </h3>
+            {withdrawals.length === 0 ? (
+              <p className="text-center py-10" style={{ color: '#A1A1AA' }}>No withdrawals yet</p>
+            ) : (
+              <div className="space-y-4">
+                {withdrawals.map((withdrawal) => (
+                  <div
+                    key={withdrawal.id}
+                    data-testid={`admin-withdrawal-${withdrawal.id}`}
+                    className="p-4 rounded-lg"
+                    style={{ background: '#0A0A0B', border: '1px solid rgba(255,255,255,0.1)' }}
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-center">
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>Player</div>
+                        <div className="font-bold">{withdrawal.user_name}</div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>{withdrawal.user_email}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>Amount</div>
+                        <div className="font-bold mono text-xl" style={{ color: '#FF0055' }}>
+                          ₹{withdrawal.amount.toFixed(2)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>Method</div>
+                        <div className="text-sm uppercase">{withdrawal.method}</div>
+                        {withdrawal.upi_id && <div className="text-xs">{withdrawal.upi_id}</div>}
+                        {withdrawal.account_number && <div className="text-xs mono">***{withdrawal.account_number.slice(-4)}</div>}
+                      </div>
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>Mobile</div>
+                        <div className="text-sm mono">{withdrawal.mobile_number}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>Status</div>
+                        <div
+                          className="px-3 py-1 rounded text-xs font-bold uppercase inline-block"
+                          style={{
+                            background: withdrawal.status === 'approved' ? '#00FF9420' : 
+                                       withdrawal.status === 'rejected' ? '#FF005520' : '#FFD60020',
+                            color: withdrawal.status === 'approved' ? '#00FF94' : 
+                                  withdrawal.status === 'rejected' ? '#FF0055' : '#FFD600'
+                          }}
+                        >
+                          {withdrawal.status}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {withdrawal.status === 'pending' && (
+                          <>
+                            <button
+                              data-testid={`approve-withdrawal-${withdrawal.id}`}
+                              onClick={() => handleWithdrawalAction(withdrawal.id, 'approve')}
+                              className="px-4 py-2 rounded font-bold text-sm"
+                              style={{ background: '#00FF94', color: '#000' }}
+                            >
+                              <CheckCircle className="w-4 h-4 inline mr-1" />
+                              Approve
+                            </button>
+                            <button
+                              data-testid={`reject-withdrawal-${withdrawal.id}`}
+                              onClick={() => handleWithdrawalAction(withdrawal.id, 'reject')}
+                              className="px-4 py-2 rounded font-bold text-sm"
+                              style={{ background: '#FF0055', color: '#FFF' }}
+                            >
+                              <XCircle className="w-4 h-4 inline mr-1" />
+                              Reject
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Users Table */}
+        {activeTab === 'users' && (
+          <div className="glass-panel p-6">
+            <h3 className="text-xl font-bold mb-6" style={{ fontFamily: 'Unbounded' }}>All Users</h3>
+            {users.length === 0 ? (
+              <p className="text-center py-10" style={{ color: '#A1A1AA' }}>No users yet</p>
+            ) : (
+              <div className="space-y-4">
+                {users.map((u) => (
+                  <div
+                    key={u.id}
+                    data-testid={`admin-user-${u.id}`}
+                    className="p-4 rounded-lg"
+                    style={{ background: '#0A0A0B', border: '1px solid rgba(255,255,255,0.1)' }}
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>Name</div>
+                        <div className="font-bold">{u.name}</div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>{u.email}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>Balance</div>
+                        <div className="font-bold mono neon-green">
+                          ₹{u.balance?.toFixed(2) || '0.00'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>Total Credited</div>
+                        <div className="font-bold mono" style={{ color: '#00E0FF' }}>
+                          ₹{u.total_credited?.toFixed(2) || '0.00'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>Total Wagered</div>
+                        <div className="font-bold mono" style={{ color: '#FFD600' }}>
+                          ₹{u.total_wagered?.toFixed(2) || '0.00'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>Status</div>
+                        <div className={u.frozen ? 'text-red-500' : 'text-green-500'}>
+                          {u.frozen ? 'Frozen' : 'Active'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Payment Settings */}
+        {activeTab === 'settings' && (
+          <div className="glass-panel p-6">
+            <h3 className="text-xl font-bold mb-6" style={{ fontFamily: 'Unbounded' }}>Payment Settings</h3>
+            
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium mb-2">QR Code URL</label>
+                <input
+                  type="text"
+                  value={qrCodeUrl}
+                  onChange={(e) => setQrCodeUrl(e.target.value)}
+                  placeholder="https://your-qr-code-url.com/qr.jpg"
+                  className="w-full px-4 py-3 rounded-lg outline-none"
+                  style={{
+                    background: '#0A0A0B',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: '#FFFFFF'
+                  }}
+                />
+                <p className="text-xs mt-1" style={{ color: '#A1A1AA' }}>
+                  Upload your QR code to an image hosting service and paste the URL here
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">UPI ID</label>
+                <input
+                  type="text"
+                  value={upiId}
+                  onChange={(e) => setUpiId(e.target.value)}
+                  placeholder="yourname@upi"
+                  className="w-full px-4 py-3 rounded-lg outline-none"
+                  style={{
+                    background: '#0A0A0B',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: '#FFFFFF'
+                  }}
+                />
+              </div>
+
+              <button
+                onClick={handleUpdatePaymentSettings}
+                className="px-6 py-3 rounded-lg font-bold"
+                style={{ background: '#00FF94', color: '#000' }}
+              >
+                Update Settings
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Reject Modal */}
+      <Dialog open={showRejectModal} onOpenChange={setShowRejectModal}>
+        <DialogContent className="glass-panel border border-white/10">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: 'Unbounded' }}>
+              Reject {rejectType === 'deposit' ? 'Deposit' : 'Withdrawal'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <label className="block text-sm mb-2">Rejection Reason</label>
+            <Textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Enter reason for rejection..."
+              className="min-h-[100px]"
+              style={{
+                background: '#0A0A0B',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: '#FFFFFF'
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <button
+              onClick={() => setShowRejectModal(false)}
+              className="px-4 py-2 rounded"
+              style={{ background: 'rgba(255,255,255,0.1)' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleReject}
+              className="px-4 py-2 rounded font-bold"
+              style={{ background: '#FF0055', color: '#FFF' }}
+            >
+              Reject
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Player Management Modal */}
+      <Dialog open={showPlayerModal} onOpenChange={setShowPlayerModal}>
+        <DialogContent className="glass-panel border border-white/10">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: 'Unbounded' }}>
+              {playerAction === 'add_balance' ? 'Add Balance' :
+               playerAction === 'deduct_balance' ? 'Deduct Balance' :
+               playerAction === 'freeze' ? 'Freeze Account' : 'Unfreeze Account'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            {(playerAction === 'add_balance' || playerAction === 'deduct_balance') && (
+              <div>
+                <label className="block text-sm mb-2">Amount</label>
+                <input
+                  type="number"
+                  value={playerAmount}
+                  onChange={(e) => setPlayerAmount(e.target.value)}
+                  placeholder="Enter amount"
+                  className="w-full px-4 py-3 rounded-lg outline-none"
+                  style={{
+                    background: '#0A0A0B',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: '#FFFFFF'
+                  }}
+                />
+              </div>
+            )}
+            {(playerAction === 'freeze' || playerAction === 'deduct_balance') && (
+              <div>
+                <label className="block text-sm mb-2">Reason</label>
+                <Textarea
+                  value={playerReason}
+                  onChange={(e) => setPlayerReason(e.target.value)}
+                  placeholder="Enter reason..."
+                  className="min-h-[80px]"
+                  style={{
+                    background: '#0A0A0B',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: '#FFFFFF'
+                  }}
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <button
+              onClick={() => setShowPlayerModal(false)}
+              className="px-4 py-2 rounded"
+              style={{ background: 'rgba(255,255,255,0.1)' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handlePlayerAction}
+              className="px-4 py-2 rounded font-bold"
+              style={{ background: '#00FF94', color: '#000' }}
+            >
+              Confirm
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Deposit Detail Modal */}
+      <Dialog open={!!showDepositDetail} onOpenChange={() => setShowDepositDetail(null)}>
+        <DialogContent className="glass-panel border border-white/10">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: 'Unbounded' }}>Deposit Details</DialogTitle>
+          </DialogHeader>
+          {showDepositDetail && (
+            <div className="py-4">
+              <div className="space-y-3 mb-4">
+                <div>
+                  <div className="text-xs" style={{ color: '#A1A1AA' }}>Player</div>
+                  <div className="font-bold">{showDepositDetail.user_name}</div>
+                </div>
+                <div>
+                  <div className="text-xs" style={{ color: '#A1A1AA' }}>Amount</div>
+                  <div className="text-xl font-bold mono neon-green">₹{showDepositDetail.amount}</div>
+                </div>
+                <div>
+                  <div className="text-xs" style={{ color: '#A1A1AA' }}>UTR</div>
+                  <div className="font-bold mono">{showDepositDetail.utr}</div>
+                </div>
+                <div>
+                  <div className="text-xs" style={{ color: '#A1A1AA' }}>Sender UPI</div>
+                  <div>{showDepositDetail.sender_upi}</div>
+                </div>
+              </div>
+              {showDepositDetail.screenshot_url && (
+                <div>
+                  <div className="text-xs mb-2" style={{ color: '#A1A1AA' }}>Payment Screenshot</div>
+                  <img 
+                    src={showDepositDetail.screenshot_url} 
+                    alt="Payment proof" 
+                    className="w-full rounded-lg max-h-96 object-contain"
+                    style={{ background: '#0A0A0B' }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <button
+              onClick={() => setShowDepositDetail(null)}
+              className="px-4 py-2 rounded"
+              style={{ background: 'rgba(255,255,255,0.1)' }}
+            >
+              Close
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default Admin;
