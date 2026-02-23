@@ -177,20 +177,57 @@ const Game = () => {
       </nav>
 
       <div className="max-w-4xl mx-auto px-3 py-4 pb-20">
-        {/* Countdown Timer */}
-        <div className="glass-panel p-8 mb-6 text-center">
-          <div className="text-sm mb-2" style={{ color: '#A1A1AA' }}>TIME REMAINING</div>
-          <div 
-            className="countdown-timer"
-            data-testid="countdown-timer"
-            style={{ 
-              fontSize: 'clamp(3rem, 10vw, 5rem)',
-              color: countdown <= 10 ? '#FF0055' : '#00FF94'
-            }}
-          >
-            {countdown !== null ? countdown : '...'}
+        {/* Wallet Balance Card */}
+        <div className="glass-panel p-4 mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Wallet className="w-6 h-6" style={{ color: '#FFD600' }} />
+            <div>
+              <div className="text-xs" style={{ color: '#A1A1AA' }}>Wallet balance</div>
+              <div className="text-2xl font-bold mono neon-green">₹{user?.balance?.toFixed(2) || '0.00'}</div>
+            </div>
           </div>
-          <div className="text-sm mt-2" style={{ color: '#A1A1AA' }}>SECONDS</div>
+          <div className="flex gap-2">
+            <button
+              data-testid="deposit-btn"
+              onClick={() => navigate('/wallet')}
+              className="px-4 py-2 rounded-lg font-bold text-sm"
+              style={{ background: '#00FF94', color: '#000' }}
+            >
+              <TrendingUp className="w-4 h-4 inline mr-1" />
+              Deposit
+            </button>
+            <button
+              data-testid="withdraw-btn"
+              onClick={() => navigate('/wallet')}
+              className="px-4 py-2 rounded-lg font-bold text-sm"
+              style={{ background: '#FF0055', color: '#FFF' }}
+            >
+              <TrendingDown className="w-4 h-4 inline mr-1" />
+              Withdraw
+            </button>
+          </div>
+        </div>
+
+        {/* Countdown & Period Info */}
+        <div className="glass-panel p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs mb-1" style={{ color: '#A1A1AA' }}>Time remaining</div>
+              <div 
+                className="text-4xl font-bold mono"
+                data-testid="countdown-timer"
+                style={{ color: countdown <= 10 ? '#FF0055' : '#00FF94' }}
+              >
+                {countdown !== null ? `00:${String(countdown).padStart(2, '0')}` : '...'}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs mb-1" style={{ color: '#A1A1AA' }}>Period</div>
+              <div className="text-sm font-bold mono" style={{ color: '#FFD600' }}>
+                {currentPeriod}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Game Result Modal */}
