@@ -11,13 +11,35 @@ import Admin from '@/pages/Admin';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 
 const ProtectedRoute = ({ children }) => {
-  const { user } = useAuth();
-  return user ? children : <Navigate to="/auth" />;
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#050505' }}>
+        <div className="text-center">
+          <div className="text-2xl neon-green mb-2">Loading...</div>
+        </div>
+      </div>
+    );
+  }
+  
+  return user ? children : <Navigate to="/auth" replace />;
 };
 
 const AdminRoute = ({ children }) => {
-  const { user } = useAuth();
-  return user && user.role === 'admin' ? children : <Navigate to="/" />;
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#050505' }}>
+        <div className="text-center">
+          <div className="text-2xl neon-green mb-2">Loading...</div>
+        </div>
+      </div>
+    );
+  }
+  
+  return user && user.role === 'admin' ? children : <Navigate to="/" replace />;
 };
 
 function AppContent() {
