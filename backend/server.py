@@ -478,7 +478,7 @@ async def approve_withdrawal(withdrawal_id: str, admin: dict = Depends(get_admin
     return {'message': 'Withdrawal approved', 'new_balance': new_balance}
 
 @api_router.put("/admin/withdrawal/{withdrawal_id}/reject")
-async def reject_withdrawal(withdrawal_id: str, admin: dict = Depends(get_admin_user)):
+async def reject_withdrawal(withdrawal_id: str, reason: str = "", admin: dict = Depends(get_admin_user)):
     withdrawal = await db.withdrawals.find_one({'id': withdrawal_id}, {'_id': 0})
     if not withdrawal:
         raise HTTPException(status_code=404, detail="Withdrawal not found")
@@ -488,7 +488,7 @@ async def reject_withdrawal(withdrawal_id: str, admin: dict = Depends(get_admin_
     
     await db.withdrawals.update_one(
         {'id': withdrawal_id},
-        {'$set': {'status': 'rejected'}}
+        {'$set': {'status': 'rejected', 'rejection_reason': reason}}
     )
     
     return {'message': 'Withdrawal rejected'}
@@ -500,6 +500,109 @@ async def get_all_users(admin: dict = Depends(get_admin_user)):
         if isinstance(user.get('created_at'), str):
             user['created_at'] = datetime.fromisoformat(user['created_at'])
     return users
+
+@api_router.get("/admin/search-player")
+async def search_player(query: str, admin: dict = Depends(get_admin_user)):
+    users = await db.users.find({
+        '$or': [
+            {'id': {'$regex': query, '$options': 'i'}},
+            {'email': {'$regex': query, '$options': 'i'}},
+            {'name': {'$regex': query, '$options': 'i'}}
+        ]
+    }, {'_id': 0, 'password': 0}).to_list(10)
+    
+    for user in users:
+        if isinstance(user.get('created_at'), str):
+            user['created_at'] = datetime.fromisoformat(user['created_at'])
+    
+    return users
+
+@api_router.post("/admin/player-management")
+async def manage_player(data: PlayerManagement, admin: dict = Depends(get_admin_user)):
+    user = await db.users.find_one({'id': data.user_id}, {'_id': 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if data.action == 'add_balance':
+        new_balance = user.get('balance', 0) + data.amount
+        await db.users.update_one(
+            {'id': data.user_id},
+            {'$set': {'balance': new_balance}}
+        )
+        return {'message': f'Added ₹{data.amount} to balance', 'new_balance': new_balance}
+    
+    elif data.action == 'deduct_balance':
+        if data.amount > user.get('balance', 0):
+            raise HTTPException(status_code=400, detail="Insufficient balance")
+        new_balance = user.get('balance', 0) - data.amount
+        await db.users.update_one(
+            {'id': data.user_id},
+            {'$set': {'balance': new_balance}}
+        )
+        return {'message': f'Deducted ₹{data.amount} from balance', 'new_balance': new_balance}
+    
+    elif data.action == 'freeze':
+        await db.users.update_one(
+            {'id': data.user_id},
+            {'$set': {'frozen': True, 'freeze_reason': data.reason}}
+        )
+        return {'message': 'Account frozen'}
+    
+    elif data.action == 'unfreeze':
+        await db.users.update_one(
+            {'id': data.user_id},
+            {'$set': {'frozen': False, 'freeze_reason': None}}
+        )
+        return {'message': 'Account unfrozen'}
+    
+    raise HTTPException(status_code=400, detail="Invalid action")
+
+@api_router.get("/admin/payment-settings")
+async def get_payment_settings(admin: dict = Depends(get_admin_user)):
+    settings = await db.payment_settings.find_one({'id': 'payment_settings'}, {'_id': 0})
+    if not settings:
+        settings = {'id': 'payment_settings', 'qr_code_url': '', 'upi_id': ''}
+    return settings
+
+@api_router.put("/admin/payment-settings")
+async def update_payment_settings(qr_code_url: str = "", upi_id: str = "", admin: dict = Depends(get_admin_user)):
+    await db.payment_settings.update_one(
+        {'id': 'payment_settings'},
+        {
+            '$set': {
+                'qr_code_url': qr_code_url,
+                'upi_id': upi_id,
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            }
+        },
+        upsert=True
+    )
+    return {'message': 'Payment settings updated'}
+
+@api_router.get("/admin/dashboard-stats")
+async def get_dashboard_stats(admin: dict = Depends(get_admin_user)):
+    total_users = await db.users.count_documents({})
+    
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_deposits = await db.deposits.count_documents({
+        'created_at': {'$gte': today_start.isoformat()},
+        'status': 'approved'
+    })
+    
+    today_withdrawals = await db.withdrawals.count_documents({
+        'created_at': {'$gte': today_start.isoformat()},
+        'status': 'approved'
+    })
+    
+    users = await db.users.find({}, {'balance': 1, '_id': 0}).to_list(10000)
+    total_balance = sum(u.get('balance', 0) for u in users)
+    
+    return {
+        'total_users': total_users,
+        'today_deposits': today_deposits,
+        'today_withdrawals': today_withdrawals,
+        'total_active_balance': total_balance
+    }
 
 @api_router.get("/")
 async def root():
