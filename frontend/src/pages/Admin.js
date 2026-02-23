@@ -250,3 +250,199 @@ const Admin = () => {
             </div>
           </div>
         )}
+
+        {/* Player Search */}
+        {activeTab === 'player-search' && (
+          <div className="glass-panel p-6">
+            <h3 className="text-xl font-bold mb-4" style={{ fontFamily: 'Unbounded' }}>Search Player</h3>
+            
+            <div className="flex gap-3 mb-6">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                placeholder="Search by ID, Email, or Mobile"
+                className="flex-1 px-4 py-3 rounded-lg outline-none"
+                style={{
+                  background: '#0A0A0B',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  color: '#FFFFFF'
+                }}
+              />
+              <button
+                onClick={handleSearch}
+                className="px-6 py-3 rounded-lg font-bold"
+                style={{ background: '#00FF94', color: '#000' }}
+              >
+                <Search className="w-5 h-5" />
+              </button>
+            </div>
+
+            {searchResults.length > 0 && (
+              <div className="space-y-4">
+                {searchResults.map((player) => (
+                  <div
+                    key={player.id}
+                    className="p-4 rounded-lg"
+                    style={{ background: '#0A0A0B', border: '1px solid rgba(255,255,255,0.1)' }}
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <div className="font-bold">{player.name}</div>
+                        <div className="text-sm" style={{ color: '#A1A1AA' }}>{player.email}</div>
+                        <div className="text-xs mono" style={{ color: '#A1A1AA' }}>ID: {player.id}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm" style={{ color: '#A1A1AA' }}>Balance</div>
+                        <div className="text-2xl font-bold mono neon-green">₹{player.balance?.toFixed(2) || '0.00'}</div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedPlayer(player);
+                          setPlayerAction('add_balance');
+                          setShowPlayerModal(true);
+                        }}
+                        className="px-4 py-2 rounded font-bold text-sm"
+                        style={{ background: '#00FF94', color: '#000' }}
+                      >
+                        <Plus className="w-4 h-4 inline mr-1" />
+                        Add Balance
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedPlayer(player);
+                          setPlayerAction('deduct_balance');
+                          setShowPlayerModal(true);
+                        }}
+                        className="px-4 py-2 rounded font-bold text-sm"
+                        style={{ background: '#FF0055', color: '#FFF' }}
+                      >
+                        <Minus className="w-4 h-4 inline mr-1" />
+                        Deduct
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedPlayer(player);
+                          setPlayerAction(player.frozen ? 'unfreeze' : 'freeze');
+                          setShowPlayerModal(true);
+                        }}
+                        className="px-4 py-2 rounded font-bold text-sm"
+                        style={{ background: '#FFD600', color: '#000' }}
+                      >
+                        {player.frozen ? <Unlock className="w-4 h-4 inline mr-1" /> : <Lock className="w-4 h-4 inline mr-1" />}
+                        {player.frozen ? 'Unfreeze' : 'Freeze'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedPlayer(player);
+                          setActiveTab('deposits');
+                        }}
+                        className="px-4 py-2 rounded font-bold text-sm"
+                        style={{ background: 'rgba(255,255,255,0.1)', color: '#FFF' }}
+                      >
+                        <Eye className="w-4 h-4 inline mr-1" />
+                        View
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Deposits Table */}
+        {activeTab === 'deposits' && (
+          <div className="glass-panel p-6">
+            <h3 className="text-xl font-bold mb-6" style={{ fontFamily: 'Unbounded' }}>
+              Deposit Requests ({pendingDeposits.length} pending)
+            </h3>
+            {deposits.length === 0 ? (
+              <p className="text-center py-10" style={{ color: '#A1A1AA' }}>No deposits yet</p>
+            ) : (
+              <div className="space-y-4">
+                {deposits.map((deposit) => (
+                  <div
+                    key={deposit.id}
+                    data-testid={`admin-deposit-${deposit.id}`}
+                    className="p-4 rounded-lg"
+                    style={{ background: '#0A0A0B', border: '1px solid rgba(255,255,255,0.1)' }}
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-center">
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>Player</div>
+                        <div className="font-bold">{deposit.user_name}</div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>{deposit.user_email}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>UTR</div>
+                        <div className="font-bold mono">{deposit.utr}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>Sender UPI</div>
+                        <div className="text-sm">{deposit.sender_upi}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>Amount</div>
+                        <div className="font-bold mono text-xl neon-green">
+                          ₹{deposit.amount.toFixed(2)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs" style={{ color: '#A1A1AA' }}>Status</div>
+                        <div
+                          className="px-3 py-1 rounded text-xs font-bold uppercase inline-block"
+                          style={{
+                            background: deposit.status === 'approved' ? '#00FF9420' : 
+                                       deposit.status === 'rejected' ? '#FF005520' : '#FFD60020',
+                            color: deposit.status === 'approved' ? '#00FF94' : 
+                                  deposit.status === 'rejected' ? '#FF0055' : '#FFD600'
+                          }}
+                        >
+                          {deposit.status}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {deposit.screenshot_url && (
+                          <button
+                            onClick={() => setShowDepositDetail(deposit)}
+                            className="px-3 py-2 rounded text-sm"
+                            style={{ background: 'rgba(255,255,255,0.1)' }}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        )}
+                        {deposit.status === 'pending' && (
+                          <>
+                            <button
+                              data-testid={`approve-deposit-${deposit.id}`}
+                              onClick={() => handleDepositAction(deposit.id, 'approve')}
+                              className="px-4 py-2 rounded font-bold text-sm"
+                              style={{ background: '#00FF94', color: '#000' }}
+                            >
+                              <CheckCircle className="w-4 h-4 inline mr-1" />
+                              Approve
+                            </button>
+                            <button
+                              data-testid={`reject-deposit-${deposit.id}`}
+                              onClick={() => handleDepositAction(deposit.id, 'reject')}
+                              className="px-4 py-2 rounded font-bold text-sm"
+                              style={{ background: '#FF0055', color: '#FFF' }}
+                            >
+                              <XCircle className="w-4 h-4 inline mr-1" />
+                              Reject
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
