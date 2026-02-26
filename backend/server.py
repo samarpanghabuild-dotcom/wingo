@@ -230,6 +230,40 @@ async def search_player(query: str, admin=Depends(get_admin_user)):
     return serialize_mongo(users)
 
 # -------------------------------
+# ADMIN PAYMENT SETTINGS
+# -------------------------------
+
+@api_router.get("/admin/payment-settings")
+async def get_payment_settings(admin=Depends(get_admin_user)):
+    settings = await db.settings.find_one({"type": "payment"})
+    if not settings:
+        return {"qr_code_url": "", "upi_id": ""}
+
+    settings.pop("_id", None)
+    return serialize_mongo(settings)
+
+@api_router.put("/admin/payment-settings")
+async def update_payment_settings(
+    qr_code_url: str = "",
+    upi_id: str = "",
+    admin=Depends(get_admin_user)
+):
+    await db.settings.update_one(
+        {"type": "payment"},
+        {
+            "$set": {
+                "type": "payment",
+                "qr_code_url": qr_code_url,
+                "upi_id": upi_id,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+        upsert=True
+    )
+
+    return {"message": "Payment settings updated"}
+
+# -------------------------------
 # ENGINE STARTUP
 # -------------------------------
 
