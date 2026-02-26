@@ -27,15 +27,14 @@ export default function Mines() {
       setGame(res.data);
       setGrid(Array(TOTAL_CELLS).fill("hidden"));
       setMultiplier(1);
-      toast.success("Game Started");
+      toast.success("Game Started 🚀");
     } catch (err) {
       toast.error(err.response?.data?.detail || "Failed to start");
     }
   };
 
   const revealCell = async (index) => {
-    if (!game) return;
-    if (grid[index] !== "hidden") return;
+    if (!game || grid[index] !== "hidden") return;
 
     try {
       const res = await axios.post(
@@ -44,21 +43,21 @@ export default function Mines() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
+      const newGrid = [...grid];
+
       if (res.data.result === "mine") {
-        const newGrid = [...grid];
         newGrid[index] = "mine";
         setGrid(newGrid);
-        toast.error("You hit a mine 💣");
+        toast.error("💣 You hit a mine!");
         setGame(null);
         return;
       }
 
-      const newGrid = [...grid];
       newGrid[index] = "safe";
       setGrid(newGrid);
       setMultiplier(res.data.multiplier);
 
-    } catch (err) {
+    } catch {
       toast.error("Reveal failed");
     }
   };
@@ -71,7 +70,7 @@ export default function Mines() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      toast.success(`Cashed Out ₹${res.data.payout}`);
+      toast.success(`💰 Cashed Out ₹${res.data.payout}`);
       setGame(null);
     } catch {
       toast.error("Cashout failed");
@@ -79,68 +78,111 @@ export default function Mines() {
   };
 
   return (
-    <div className="min-h-screen p-6 text-white">
-      <h1 className="text-3xl font-bold mb-6">Mines</h1>
+    <div className="min-h-screen px-6 py-10" style={{ background: "#050505" }}>
+      <div className="max-w-5xl mx-auto">
 
-      {!game && (
-        <div className="space-y-4 mb-6">
-          <input
-            type="number"
-            value={betAmount}
-            onChange={(e) => setBetAmount(e.target.value)}
-            placeholder="Bet Amount"
-            className="px-4 py-2 bg-black border"
-          />
+        {/* Header */}
+        <h1 
+          className="text-4xl font-bold mb-10 text-center"
+          style={{ color: "#00FF94", fontFamily: "Unbounded" }}
+        >
+          💣 Mines
+        </h1>
 
-          <input
-            type="number"
-            value={mines}
-            onChange={(e) => setMines(e.target.value)}
-            placeholder="Mines"
-            className="px-4 py-2 bg-black border"
-          />
+        {!game && (
+          <div className="glass-panel p-8 rounded-2xl mb-8">
+            <div className="grid md:grid-cols-3 gap-6">
 
-          <button
-            onClick={startGame}
-            className="px-6 py-2 bg-green-500 text-black font-bold"
-          >
-            Start Game
-          </button>
-        </div>
-      )}
-
-      {game && (
-        <>
-          <div className="mb-4">
-            <div>Multiplier: x{multiplier}</div>
-            <button
-              onClick={cashout}
-              className="mt-2 px-4 py-2 bg-yellow-500 text-black font-bold"
-            >
-              Cashout
-            </button>
-          </div>
-
-          <div className="grid grid-cols-5 gap-2">
-            {grid.map((cell, index) => (
-              <div
-                key={index}
-                onClick={() => revealCell(index)}
-                className={`h-16 flex items-center justify-center cursor-pointer border
-                  ${
-                    cell === "hidden"
-                      ? "bg-gray-800"
-                      : cell === "safe"
-                      ? "bg-green-600"
-                      : "bg-red-600"
-                  }`}
-              >
-                {cell === "mine" ? "💣" : ""}
+              <div>
+                <label className="block text-sm mb-2 text-gray-400">Bet Amount</label>
+                <input
+                  type="number"
+                  value={betAmount}
+                  onChange={(e) => setBetAmount(e.target.value)}
+                  className="w-full px-4 py-3 rounded-lg bg-black border border-green-500 text-white"
+                />
               </div>
-            ))}
+
+              <div>
+                <label className="block text-sm mb-2 text-gray-400">Mines</label>
+                <input
+                  type="number"
+                  value={mines}
+                  onChange={(e) => setMines(e.target.value)}
+                  className="w-full px-4 py-3 rounded-lg bg-black border border-green-500 text-white"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  onClick={startGame}
+                  className="w-full py-3 rounded-lg font-bold text-black transition-all"
+                  style={{
+                    background: "#00FF94",
+                    boxShadow: "0 0 15px #00FF94"
+                  }}
+                >
+                  Start Game
+                </button>
+              </div>
+
+            </div>
           </div>
-        </>
-      )}
+        )}
+
+        {game && (
+          <>
+            {/* Multiplier Panel */}
+            <div className="flex justify-between items-center mb-6 glass-panel p-4 rounded-xl">
+              <div className="text-lg">
+                Multiplier: 
+                <span className="ml-2 font-bold text-green-400 text-xl">
+                  x{multiplier}
+                </span>
+              </div>
+
+              <button
+                onClick={cashout}
+                className="px-6 py-2 rounded-lg font-bold text-black transition-all"
+                style={{
+                  background: "#FFD600",
+                  boxShadow: "0 0 10px #FFD600"
+                }}
+              >
+                Cashout
+              </button>
+            </div>
+
+            {/* Grid */}
+            <div className="grid grid-cols-5 gap-4">
+              {grid.map((cell, index) => (
+                <div
+                  key={index}
+                  onClick={() => revealCell(index)}
+                  className="h-20 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-300 border"
+                  style={{
+                    background:
+                      cell === "hidden"
+                        ? "#0A0A0B"
+                        : cell === "safe"
+                        ? "#00FF94"
+                        : "#FF0055",
+                    borderColor: "#00FF94",
+                    boxShadow:
+                      cell === "safe"
+                        ? "0 0 15px #00FF94"
+                        : cell === "mine"
+                        ? "0 0 15px #FF0055"
+                        : "0 0 5px rgba(0,255,148,0.3)"
+                  }}
+                >
+                  {cell === "mine" && "💣"}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
