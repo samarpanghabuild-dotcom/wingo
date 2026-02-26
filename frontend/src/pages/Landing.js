@@ -6,11 +6,13 @@ const Landing = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
+  // ✅ Unified Game List (Wingo + Mines)
   const gameModes = [
-    { duration: '30s', time: 30, color: '#00FF94' },
-    { duration: '1min', time: 60, color: '#00E0FF' },
-    { duration: '3min', time: 180, color: '#FF0055' },
-    { duration: '5min', time: 300, color: '#FFD600' }
+    { type: 'wingo', label: '30s', route: '/game/30s', color: '#00FF94' },
+    { type: 'wingo', label: '1min', route: '/game/1min', color: '#00E0FF' },
+    { type: 'wingo', label: '3min', route: '/game/3min', color: '#FF0055' },
+    { type: 'wingo', label: '5min', route: '/game/5min', color: '#FFD600' },
+    { type: 'mines', label: 'MINES', route: '/mines', color: '#FFD600' }
   ];
 
   return (
@@ -94,59 +96,45 @@ const Landing = () => {
           Choose Your <span className="neon-green">Game</span>
         </h3>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6">
+        {/* ✅ Responsive Stable Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-6">
 
-          {/* Wingo Modes */}
-          {gameModes.map((mode) => (
+          {gameModes.map((game) => (
             <button
-              key={mode.duration}
+              key={game.label}
               onClick={() => {
                 if (!user) {
                   navigate('/auth');
                 } else {
-                  navigate(`/game/${mode.duration}`);
+                  navigate(game.route);
                 }
               }}
               className="group relative overflow-hidden glass-panel transition-all aspect-square flex flex-col items-center justify-center gap-4 p-6 hover:scale-105"
-              style={{ borderColor: `${mode.color}20` }}
+              style={{ borderColor: `${game.color}20` }}
             >
-              <Clock className="w-12 h-12" style={{ color: mode.color }} />
+              {game.type === 'mines' ? (
+                <Bomb className="w-12 h-12" style={{ color: game.color }} />
+              ) : (
+                <Clock className="w-12 h-12" style={{ color: game.color }} />
+              )}
+
               <div className="text-center">
-                <div className="text-3xl font-bold mono mb-2" style={{ color: mode.color }}>
-                  {mode.duration}
+                <div className="text-3xl font-bold mono mb-2" style={{ color: game.color }}>
+                  {game.label}
                 </div>
-                <div className="text-sm text-gray-400">WINGO</div>
+                <div className="text-sm text-gray-400">
+                  {game.type === 'mines' ? 'HIGH RISK' : 'WINGO'}
+                </div>
               </div>
+
+              <div
+                className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{
+                  background: `linear-gradient(135deg, ${game.color}15 0%, transparent 100%)`
+                }}
+              />
             </button>
           ))}
-
-          {/* Mines Game Card */}
-          <button
-            onClick={() => {
-              if (!user) {
-                navigate('/auth');
-              } else {
-                navigate('/mines');
-              }
-            }}
-            className="group relative overflow-hidden glass-panel transition-all aspect-square flex flex-col items-center justify-center gap-4 p-6 hover:scale-105"
-            style={{ borderColor: '#FFD60020' }}
-          >
-            <Bomb className="w-12 h-12" style={{ color: '#FFD600' }} />
-            <div className="text-center">
-              <div className="text-3xl font-bold mono mb-2" style={{ color: '#FFD600' }}>
-                MINES
-              </div>
-              <div className="text-sm text-gray-400">HIGH RISK</div>
-            </div>
-
-            <div
-              className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{
-                background: 'linear-gradient(135deg, #FFD60020 0%, transparent 100%)'
-              }}
-            />
-          </button>
 
         </div>
       </div>
