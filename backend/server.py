@@ -1,6 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.encoders import jsonable_encoder
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -35,7 +34,7 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "change-me")
 JWT_ALGORITHM = "HS256"
 
 # -------------------------------
-# SERIALIZER (FIXES OBJECTID ERROR)
+# SERIALIZER
 # -------------------------------
 
 def serialize_mongo(data):
@@ -53,7 +52,6 @@ def serialize_mongo(data):
 
     return data
 
-
 # -------------------------------
 # INIT WINGO ENGINE
 # -------------------------------
@@ -69,28 +67,15 @@ class UserRegister(BaseModel):
     password: str
     name: str
 
-
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
-
 
 class BetRequest(BaseModel):
     game_mode: str
     bet_type: str
     bet_value: str
     bet_amount: float
-
-
-class AdminResetPasswordRequest(BaseModel):
-    user_id: str
-    new_password: str
-
-
-class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str
-
 
 # -------------------------------
 # AUTH HELPERS
@@ -99,13 +84,11 @@ class ChangePasswordRequest(BaseModel):
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-
 def verify_password(password: str, hashed: str) -> bool:
     try:
         return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
     except:
         return False
-
 
 def create_token(user_id: str, email: str, role: str) -> str:
     payload = {
@@ -115,7 +98,6 @@ def create_token(user_id: str, email: str, role: str) -> str:
         "exp": int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp()),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -139,12 +121,10 @@ async def get_current_user(
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-
 async def get_admin_user(user=Depends(get_current_user)):
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
     return user
-
 
 # -------------------------------
 # AUTH ROUTES
@@ -152,41 +132,33 @@ async def get_admin_user(user=Depends(get_current_user)):
 
 @api_router.post("/auth/register")
 async def register(data: UserRegister):
-    existing = await db.users.find_one({"email": data.email})
-    if existing:
+    if await db.users.find_one({"email": data.email}):
         raise HTTPException(status_code=400, detail="Email exists")
 
     user_id = str(uuid.uuid4())
 
-    await db.users.insert_one(
-        {
-            "id": user_id,
-            "email": data.email,
-            "name": data.name,
-            "password": hash_password(data.password.strip()),
-            "balance": 0,
-            "vip_tier": 1,
-            "role": "user",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-    )
+    await db.users.insert_one({
+        "id": user_id,
+        "email": data.email,
+        "name": data.name,
+        "password": hash_password(data.password.strip()),
+        "balance": 0,
+        "vip_tier": 1,
+        "role": "user",
+        "created_at": datetime.now(timezone.utc),
+    })
 
     token = create_token(user_id, data.email, "user")
     return {"token": token}
-
 
 @api_router.post("/auth/login")
 async def login(data: UserLogin):
     user = await db.users.find_one({"email": data.email})
 
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    if not verify_password(data.password.strip(), user.get("password", "")):
+    if not user or not verify_password(data.password.strip(), user.get("password", "")):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_token(user["id"], user["email"], user["role"])
-
     user.pop("password", None)
 
     return {
@@ -194,138 +166,68 @@ async def login(data: UserLogin):
         "user": serialize_mongo(user),
     }
 
-
 # -------------------------------
-# PASSWORD MANAGEMENT
-# -------------------------------
-
-@api_router.post("/admin/reset-password")
-async def admin_reset_password(
-    data: AdminResetPasswordRequest,
-    admin=Depends(get_admin_user),
-):
-    user = await db.users.find_one({"id": data.user_id})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    new_hash = hash_password(data.new_password.strip())
-
-    await db.users.update_one(
-        {"id": data.user_id},
-        {"$set": {"password": new_hash}},
-    )
-
-    return {"message": "Password reset successfully"}
-
-
-@api_router.post("/user/change-password")
-async def change_password(
-    data: ChangePasswordRequest,
-    user=Depends(get_current_user),
-):
-    db_user = await db.users.find_one({"id": user["id"]})
-
-    if not verify_password(
-        data.current_password.strip(),
-        db_user.get("password", ""),
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Current password incorrect",
-        )
-
-    new_hash = hash_password(data.new_password.strip())
-
-    await db.users.update_one(
-        {"id": user["id"]},
-        {"$set": {"password": new_hash}},
-    )
-
-    return {"message": "Password updated successfully"}
-
-
-# -------------------------------
-# GAME STATE
+# ADMIN DASHBOARD ROUTES
 # -------------------------------
 
-@api_router.get("/game/current")
-async def get_current(game_type: str):
-    period = await db.wingo_periods.find_one(
-        {"game_type": game_type, "revealed": False},
-        sort=[("start_time", 1)],
+@api_router.get("/admin/dashboard-stats")
+async def admin_dashboard(admin=Depends(get_admin_user)):
+
+    total_users = await db.users.count_documents({"role": "user"})
+
+    today_start = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
     )
 
-    if not period:
-        return {"message": "No active period"}
+    today_deposits = await db.deposits.count_documents({
+        "created_at": {"$gte": today_start}
+    })
 
-    return serialize_mongo(period)
+    today_withdrawals = await db.withdrawals.count_documents({
+        "created_at": {"$gte": today_start}
+    })
 
-
-@api_router.get("/game/history")
-async def get_game_history(game_type: str):
-    history = (
-        await db.wingo_periods.find(
-            {"game_type": game_type, "revealed": True}
-        )
-        .sort("start_time", -1)
-        .limit(20)
-        .to_list(20)
-    )
-
-    return serialize_mongo(history)
-
-
-# -------------------------------
-# PLACE BET
-# -------------------------------
-
-@api_router.post("/game/bet")
-async def place_bet(bet: BetRequest, user=Depends(get_current_user)):
-
-    if bet.bet_amount > user["balance"]:
-        raise HTTPException(status_code=400, detail="Insufficient balance")
-
-    current_period = await db.wingo_periods.find_one(
-        {"game_type": bet.game_mode, "revealed": False},
-        sort=[("start_time", 1)],
-    )
-
-    if not current_period:
-        raise HTTPException(status_code=400, detail="No active period")
-
-    await db.users.update_one(
-        {"id": user["id"]},
-        {"$inc": {"balance": -bet.bet_amount}},
-    )
-
-    await db.bets.insert_one(
-        {
-            "user_id": user["id"],
-            "period_id": current_period["period_id"],
-            "game_type": bet.game_mode,
-            "bet_type": bet.bet_type,
-            "bet_value": bet.bet_value,
-            "amount": bet.bet_amount,
-            "status": "pending",
-            "created_at": datetime.now(timezone.utc),
-        }
-    )
+    users = await db.users.find({"role": "user"}).to_list(None)
+    total_balance = sum(u.get("balance", 0) for u in users)
 
     return {
-        "message": "Bet placed",
-        "period": current_period["period_id"],
+        "total_users": total_users,
+        "today_deposits": today_deposits,
+        "today_withdrawals": today_withdrawals,
+        "total_active_balance": total_balance,
     }
 
+@api_router.get("/admin/users")
+async def admin_users(admin=Depends(get_admin_user)):
+    users = await db.users.find({"role": "user"}).to_list(None)
+    for u in users:
+        u.pop("password", None)
+    return serialize_mongo(users)
 
-# -------------------------------
-# ADMIN PREVIEW
-# -------------------------------
+@api_router.get("/admin/deposits")
+async def admin_deposits(admin=Depends(get_admin_user)):
+    deposits = await db.deposits.find().sort("created_at", -1).to_list(None)
+    return serialize_mongo(deposits)
 
-@api_router.get("/admin/game-results-preview")
-async def admin_preview(game_type: str, admin=Depends(get_admin_user)):
-    result = await wingo_engine.preview_next_results(game_type, admin)
-    return serialize_mongo(result)
+@api_router.get("/admin/withdrawals")
+async def admin_withdrawals(admin=Depends(get_admin_user)):
+    withdrawals = await db.withdrawals.find().sort("created_at", -1).to_list(None)
+    return serialize_mongo(withdrawals)
 
+@api_router.get("/admin/search-player")
+async def search_player(query: str, admin=Depends(get_admin_user)):
+    users = await db.users.find({
+        "$or": [
+            {"email": {"$regex": query, "$options": "i"}},
+            {"name": {"$regex": query, "$options": "i"}},
+            {"id": {"$regex": query, "$options": "i"}},
+        ]
+    }).to_list(None)
+
+    for u in users:
+        u.pop("password", None)
+
+    return serialize_mongo(users)
 
 # -------------------------------
 # ENGINE STARTUP
@@ -343,7 +245,6 @@ async def startup():
     asyncio.create_task(wingo_engine.run_engine("180s"))
     asyncio.create_task(wingo_engine.run_engine("300s"))
 
-
 # -------------------------------
 # APP CONFIG
 # -------------------------------
@@ -359,7 +260,6 @@ app.add_middleware(
 )
 
 logging.basicConfig(level=logging.INFO)
-
 
 @app.on_event("shutdown")
 async def shutdown():
