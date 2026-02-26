@@ -14,6 +14,7 @@ from datetime import datetime, timezone, timedelta
 import bcrypt
 import jwt
 import asyncio
+import random
 
 # -------------------------------
 # ENV + DB
@@ -40,7 +41,6 @@ JWT_ALGORITHM = "HS256"
 def serialize_mongo(data):
     if isinstance(data, list):
         return [serialize_mongo(item) for item in data]
-
     if isinstance(data, dict):
         new_data = {}
         for key, value in data.items():
@@ -49,7 +49,6 @@ def serialize_mongo(data):
             else:
                 new_data[key] = serialize_mongo(value)
         return new_data
-
     return data
 
 # -------------------------------
@@ -71,22 +70,27 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
-class BetRequest(BaseModel):
-    game_mode: str
-    bet_type: str
-    bet_value: str
+class MinesStartRequest(BaseModel):
     bet_amount: float
+    mines: int
+
+class MinesRevealRequest(BaseModel):
+    game_id: str
+    cell_index: int
+
+class MinesCashoutRequest(BaseModel):
+    game_id: str
 
 # -------------------------------
 # AUTH HELPERS
 # -------------------------------
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 def verify_password(password: str, hashed: str) -> bool:
     try:
-        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+        return bcrypt.checkpw(password.encode(), hashed.encode())
     except:
         return False
 
@@ -99,23 +103,14 @@ def create_token(user_id: str, email: str, role: str) -> str:
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-):
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
-        payload = jwt.decode(
-            credentials.credentials,
-            JWT_SECRET,
-            algorithms=[JWT_ALGORITHM],
-        )
-
+        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user = await db.users.find_one({"id": payload["user_id"]})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
-
         user.pop("password", None)
         return serialize_mongo(user)
-
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
@@ -161,39 +156,22 @@ async def login(data: UserLogin):
     token = create_token(user["id"], user["email"], user["role"])
     user.pop("password", None)
 
-    return {
-        "token": token,
-        "user": serialize_mongo(user),
-    }
+    return {"token": token, "user": serialize_mongo(user)}
 
 # -------------------------------
-# ADMIN DASHBOARD ROUTES
+# ADMIN ROUTES
 # -------------------------------
 
 @api_router.get("/admin/dashboard-stats")
 async def admin_dashboard(admin=Depends(get_admin_user)):
-
     total_users = await db.users.count_documents({"role": "user"})
-
-    today_start = datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-
-    today_deposits = await db.deposits.count_documents({
-        "created_at": {"$gte": today_start}
-    })
-
-    today_withdrawals = await db.withdrawals.count_documents({
-        "created_at": {"$gte": today_start}
-    })
-
     users = await db.users.find({"role": "user"}).to_list(None)
     total_balance = sum(u.get("balance", 0) for u in users)
 
     return {
         "total_users": total_users,
-        "today_deposits": today_deposits,
-        "today_withdrawals": today_withdrawals,
+        "today_deposits": 0,
+        "today_withdrawals": 0,
         "total_active_balance": total_balance,
     }
 
@@ -204,64 +182,88 @@ async def admin_users(admin=Depends(get_admin_user)):
         u.pop("password", None)
     return serialize_mongo(users)
 
-@api_router.get("/admin/deposits")
-async def admin_deposits(admin=Depends(get_admin_user)):
-    deposits = await db.deposits.find().sort("created_at", -1).to_list(None)
-    return serialize_mongo(deposits)
-
-@api_router.get("/admin/withdrawals")
-async def admin_withdrawals(admin=Depends(get_admin_user)):
-    withdrawals = await db.withdrawals.find().sort("created_at", -1).to_list(None)
-    return serialize_mongo(withdrawals)
-
-@api_router.get("/admin/search-player")
-async def search_player(query: str, admin=Depends(get_admin_user)):
-    users = await db.users.find({
-        "$or": [
-            {"email": {"$regex": query, "$options": "i"}},
-            {"name": {"$regex": query, "$options": "i"}},
-            {"id": {"$regex": query, "$options": "i"}},
-        ]
-    }).to_list(None)
-
-    for u in users:
-        u.pop("password", None)
-
-    return serialize_mongo(users)
-
 # -------------------------------
-# ADMIN PAYMENT SETTINGS
+# MINES GAME
 # -------------------------------
 
-@api_router.get("/admin/payment-settings")
-async def get_payment_settings(admin=Depends(get_admin_user)):
-    settings = await db.settings.find_one({"type": "payment"})
-    if not settings:
-        return {"qr_code_url": "", "upi_id": ""}
+TOTAL_CELLS = 25
 
-    settings.pop("_id", None)
-    return serialize_mongo(settings)
+@api_router.post("/mines/start")
+async def start_mines(data: MinesStartRequest, user=Depends(get_current_user)):
 
-@api_router.put("/admin/payment-settings")
-async def update_payment_settings(
-    qr_code_url: str = "",
-    upi_id: str = "",
-    admin=Depends(get_admin_user)
-):
-    await db.settings.update_one(
-        {"type": "payment"},
-        {
-            "$set": {
-                "type": "payment",
-                "qr_code_url": qr_code_url,
-                "upi_id": upi_id,
-                "updated_at": datetime.now(timezone.utc),
-            }
-        },
-        upsert=True
+    if data.bet_amount <= 0 or data.bet_amount > user["balance"]:
+        raise HTTPException(status_code=400, detail="Invalid bet amount")
+
+    if data.mines < 1 or data.mines > 24:
+        raise HTTPException(status_code=400, detail="Invalid mines count")
+
+    await db.users.update_one({"id": user["id"]}, {"$inc": {"balance": -data.bet_amount}})
+
+    mine_positions = random.sample(range(TOTAL_CELLS), data.mines)
+
+    game = {
+        "game_id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "bet_amount": data.bet_amount,
+        "mines": data.mines,
+        "mine_positions": mine_positions,
+        "revealed": [],
+        "multiplier": 1.0,
+        "status": "active",
+        "created_at": datetime.now(timezone.utc)
+    }
+
+    await db.mines_games.insert_one(game)
+    game.pop("mine_positions")
+
+    return serialize_mongo(game)
+
+@api_router.post("/mines/reveal")
+async def reveal_cell(data: MinesRevealRequest, user=Depends(get_current_user)):
+
+    game = await db.mines_games.find_one({
+        "game_id": data.game_id,
+        "user_id": user["id"],
+        "status": "active"
+    })
+
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    if data.cell_index in game["mine_positions"]:
+        await db.mines_games.update_one({"game_id": data.game_id}, {"$set": {"status": "lost"}})
+        return {"result": "mine", "status": "lost"}
+
+    revealed = game["revealed"] + [data.cell_index]
+    safe_cells = TOTAL_CELLS - game["mines"]
+
+    multiplier = round((safe_cells / (safe_cells - len(revealed))) * 0.98, 4)
+
+    await db.mines_games.update_one(
+        {"game_id": data.game_id},
+        {"$set": {"revealed": revealed, "multiplier": multiplier}}
     )
 
-    return {"message": "Payment settings updated"}
+    return {"result": "safe", "multiplier": multiplier}
+
+@api_router.post("/mines/cashout")
+async def cashout(data: MinesCashoutRequest, user=Depends(get_current_user)):
+
+    game = await db.mines_games.find_one({
+        "game_id": data.game_id,
+        "user_id": user["id"],
+        "status": "active"
+    })
+
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    payout = round(game["bet_amount"] * game["multiplier"], 2)
+
+    await db.users.update_one({"id": user["id"]}, {"$inc": {"balance": payout}})
+    await db.mines_games.update_one({"game_id": data.game_id}, {"$set": {"status": "cashed_out"}})
+
+    return {"payout": payout}
 
 # -------------------------------
 # ENGINE STARTUP
