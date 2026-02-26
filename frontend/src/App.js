@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import '@/App.css';
+
 import Landing from '@/pages/Landing';
 import Auth from '@/pages/Auth';
 import Game from '@/pages/Game';
@@ -9,6 +10,8 @@ import Wallet from '@/pages/Wallet';
 import Withdrawal from '@/pages/Withdrawal';
 import History from '@/pages/History';
 import Admin from '@/pages/Admin';
+import Mines from '@/pages/Mines'; // ✅ NEW
+
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 
 const ProtectedRoute = ({ children }) => {
@@ -48,13 +51,49 @@ function AppContent() {
     <div className="App">
       <Toaster position="top-center" richColors />
       <Routes>
+
+        {/* Public Routes */}
         <Route path="/" element={<Landing />} />
         <Route path="/auth" element={<Auth />} />
-        <Route path="/game/:mode" element={<ProtectedRoute><Game /></ProtectedRoute>} />
-        <Route path="/wallet" element={<ProtectedRoute><Wallet /></ProtectedRoute>} />
-        <Route path="/withdrawal" element={<ProtectedRoute><Withdrawal /></ProtectedRoute>} />
-        <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
-        <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
+
+        {/* Protected User Routes */}
+        <Route path="/game/:mode" element={
+          <ProtectedRoute>
+            <Game />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/mines" element={  // ✅ NEW MINES ROUTE
+          <ProtectedRoute>
+            <Mines />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/wallet" element={
+          <ProtectedRoute>
+            <Wallet />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/withdrawal" element={
+          <ProtectedRoute>
+            <Withdrawal />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/history" element={
+          <ProtectedRoute>
+            <History />
+          </ProtectedRoute>
+        } />
+
+        {/* Admin Route */}
+        <Route path="/admin" element={
+          <AdminRoute>
+            <Admin />
+          </AdminRoute>
+        } />
+
       </Routes>
     </div>
   );
