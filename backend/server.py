@@ -55,7 +55,7 @@ class UserLogin(BaseModel):
 
 
 class BetRequest(BaseModel):
-    game_mode: str   # 30s / 60s / 180s / 300s
+    game_mode: str
     bet_type: str
     bet_value: str
     bet_amount: float
@@ -76,11 +76,14 @@ class ChangePasswordRequest(BaseModel):
 # -------------------------------
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode(), hashed.encode())
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+    except:
+        return False
 
 
 def create_token(user_id: str, email: str, role: str) -> str:
@@ -88,7 +91,7 @@ def create_token(user_id: str, email: str, role: str) -> str:
         "user_id": user_id,
         "email": email,
         "role": role,
-        "exp": datetime.now(timezone.utc) + timedelta(days=7),
+        "exp": int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp()),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -102,6 +105,7 @@ async def get_current_user(
             JWT_SECRET,
             algorithms=[JWT_ALGORITHM],
         )
+
         user = await db.users.find_one({"id": payload["user_id"]})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
@@ -154,9 +158,15 @@ async def register(data: UserRegister):
 async def login(data: UserLogin):
     user = await db.users.find_one({"email": data.email})
 
-    if not user or not verify_password(
-        data.password.strip(), user["password"]
-    ):
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    stored_password = user.get("password")
+
+    if not stored_password:
+        raise HTTPException(status_code=500, detail="Password missing in DB")
+
+    if not verify_password(data.password.strip(), stored_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_token(user["id"], user["email"], user["role"])
@@ -196,7 +206,8 @@ async def change_password(
     db_user = await db.users.find_one({"id": user["id"]})
 
     if not verify_password(
-        data.current_password.strip(), db_user["password"]
+        data.current_password.strip(),
+        db_user.get("password", ""),
     ):
         raise HTTPException(
             status_code=400,
@@ -214,7 +225,7 @@ async def change_password(
 
 
 # -------------------------------
-# GAME STATE (PUBLIC)
+# GAME STATE
 # -------------------------------
 
 @api_router.get("/game/current")
@@ -255,10 +266,7 @@ async def get_game_history(game_type: str):
 async def place_bet(bet: BetRequest, user=Depends(get_current_user)):
 
     if bet.bet_amount > user["balance"]:
-        raise HTTPException(
-            status_code=400,
-            detail="Insufficient balance",
-        )
+        raise HTTPException(status_code=400, detail="Insufficient balance")
 
     current_period = await db.wingo_periods.find_one(
         {"game_type": bet.game_mode, "revealed": False},
@@ -266,10 +274,7 @@ async def place_bet(bet: BetRequest, user=Depends(get_current_user)):
     )
 
     if not current_period:
-        raise HTTPException(
-            status_code=400,
-            detail="No active period",
-        )
+        raise HTTPException(status_code=400, detail="No active period")
 
     await db.users.update_one(
         {"id": user["id"]},
@@ -289,10 +294,7 @@ async def place_bet(bet: BetRequest, user=Depends(get_current_user)):
         }
     )
 
-    return {
-        "message": "Bet placed",
-        "period": current_period["period_id"],
-    }
+    return {"message": "Bet placed", "period": current_period["period_id"]}
 
 
 # -------------------------------
@@ -300,10 +302,7 @@ async def place_bet(bet: BetRequest, user=Depends(get_current_user)):
 # -------------------------------
 
 @api_router.get("/admin/game-results-preview")
-async def admin_preview(
-    game_type: str,
-    admin=Depends(get_admin_user),
-):
+async def admin_preview(game_type: str, admin=Depends(get_admin_user)):
     return await wingo_engine.preview_next_results(game_type, admin)
 
 
@@ -313,16 +312,10 @@ async def admin_preview(
 
 @app.on_event("startup")
 async def startup():
-
     for game in ["30s", "60s", "180s", "300s"]:
-        existing = await db.wingo_periods.find_one(
-            {"game_type": game}
-        )
+        existing = await db.wingo_periods.find_one({"game_type": game})
         if not existing:
-            await wingo_engine.generate_future_periods(
-                game,
-                300,
-            )
+            await wingo_engine.generate_future_periods(game, 300)
 
     asyncio.create_task(wingo_engine.run_engine("30s"))
     asyncio.create_task(wingo_engine.run_engine("60s"))
@@ -339,16 +332,12 @@ app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get(
-        "CORS_ORIGINS",
-        "*",
-    ).split(","),
+    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 logging.basicConfig(level=logging.INFO)
-
 
 @app.on_event("shutdown")
 async def shutdown():
