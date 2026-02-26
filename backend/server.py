@@ -1,14 +1,15 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.encoders import jsonable_encoder
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from wingo_engine import WingoEngine
+from bson import ObjectId
 import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, EmailStr
-from typing import Optional
 import uuid
 from datetime import datetime, timezone, timedelta
 import bcrypt
@@ -32,6 +33,26 @@ security = HTTPBearer()
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "change-me")
 JWT_ALGORITHM = "HS256"
+
+# -------------------------------
+# SERIALIZER (FIXES OBJECTID ERROR)
+# -------------------------------
+
+def serialize_mongo(data):
+    if isinstance(data, list):
+        return [serialize_mongo(item) for item in data]
+
+    if isinstance(data, dict):
+        new_data = {}
+        for key, value in data.items():
+            if isinstance(value, ObjectId):
+                new_data[key] = str(value)
+            else:
+                new_data[key] = serialize_mongo(value)
+        return new_data
+
+    return data
+
 
 # -------------------------------
 # INIT WINGO ENGINE
@@ -111,7 +132,7 @@ async def get_current_user(
             raise HTTPException(status_code=401, detail="User not found")
 
         user.pop("password", None)
-        return user
+        return serialize_mongo(user)
 
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
@@ -161,18 +182,17 @@ async def login(data: UserLogin):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    stored_password = user.get("password")
-
-    if not stored_password:
-        raise HTTPException(status_code=500, detail="Password missing in DB")
-
-    if not verify_password(data.password.strip(), stored_password):
+    if not verify_password(data.password.strip(), user.get("password", "")):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_token(user["id"], user["email"], user["role"])
+
     user.pop("password", None)
 
-    return {"token": token, "user": user}
+    return {
+        "token": token,
+        "user": serialize_mongo(user),
+    }
 
 
 # -------------------------------
@@ -234,11 +254,11 @@ async def get_current(game_type: str):
         {"game_type": game_type, "revealed": False},
         sort=[("start_time", 1)],
     )
+
     if not period:
         return {"message": "No active period"}
 
-    period.pop("_id", None)
-    return period
+    return serialize_mongo(period)
 
 
 @api_router.get("/game/history")
@@ -252,10 +272,7 @@ async def get_game_history(game_type: str):
         .to_list(20)
     )
 
-    for h in history:
-        h.pop("_id", None)
-
-    return history
+    return serialize_mongo(history)
 
 
 # -------------------------------
@@ -294,7 +311,10 @@ async def place_bet(bet: BetRequest, user=Depends(get_current_user)):
         }
     )
 
-    return {"message": "Bet placed", "period": current_period["period_id"]}
+    return {
+        "message": "Bet placed",
+        "period": current_period["period_id"],
+    }
 
 
 # -------------------------------
@@ -303,7 +323,8 @@ async def place_bet(bet: BetRequest, user=Depends(get_current_user)):
 
 @api_router.get("/admin/game-results-preview")
 async def admin_preview(game_type: str, admin=Depends(get_admin_user)):
-    return await wingo_engine.preview_next_results(game_type, admin)
+    result = await wingo_engine.preview_next_results(game_type, admin)
+    return serialize_mongo(result)
 
 
 # -------------------------------
@@ -338,6 +359,7 @@ app.add_middleware(
 )
 
 logging.basicConfig(level=logging.INFO)
+
 
 @app.on_event("shutdown")
 async def shutdown():
